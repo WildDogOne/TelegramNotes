@@ -5,17 +5,15 @@ Handles communication with Ollama API, error handling, and response parsing.
 
 import json
 import logging
-from http.client import responses
 
 import requests
 from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel
-from ollama import generate
 from ollama import Client
 
 from noteBot.config import config
-from noteBot.utils import extract_keywords
+from noteBot.constants import CLASSIFICATION_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -125,31 +123,7 @@ class OllamaClient:
 
         existing_classes_str = ", ".join(f'"{cls}"' for cls in existing_classes) if existing_classes else "none"
 
-        prompt = f"""You are a note classification assistant. Your task is to classify the following note into an appropriate category and suggest a filename.
-
-IMPORTANT INSTRUCTIONS:
-1. STRONGLY PREFER existing categories over creating new ones
-2. Only suggest a new category if the note clearly doesn't fit any existing category
-3. Use lowercase with underscores for category names (e.g., "work_projects", "cooking_recipes")
-4. Provide a confidence score between 0.0 and 1.0
-5. Suggest a descriptive filename without extension
-6. Respond ONLY with valid JSON in the exact format shown below
-
-EXISTING CATEGORIES: {existing_classes_str}
-
-NOTE TO CLASSIFY:
-"{note_text}"
-
-Respond with JSON in this exact format:
-{{
-    "class": "category_name",
-    "confidence": 0.95,
-    "suggested_filename": "descriptive_filename_without_extension"
-}}
-
-JSON Response:"""
-
-        return prompt
+        return CLASSIFICATION_PROMPT.format(existing_classes_str=existing_classes_str, note_text=note_text)
 
     def _parse_classification_response(self, data: dict, existing_classes: List[str]) -> Optional[
         OllamaClassificationResult]:

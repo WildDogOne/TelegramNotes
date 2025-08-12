@@ -265,32 +265,3 @@ def truncate_text(text: str, max_length: int = 100, suffix: str = "...") -> str:
 
     truncated_length = max_length - len(suffix)
     return text[:truncated_length] + suffix
-
-
-def extract_keywords(text: str, max_keywords: int = 5) -> list:
-    """
-    Extract potential keywords from text for use in classification prompts.
-    
-    Args:
-        text: The input text
-        max_keywords: Maximum number of keywords to extract
-        
-    Returns:
-        List of potential keywords
-    """
-    # Simple keyword extraction - remove common words and get unique terms
-    common_words = {
-        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with',
-        'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does',
-        'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'this', 'that',
-        'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her',
-        'us', 'them', 'my', 'your', 'his', 'her', 'its', 'our', 'their'
-    }
-
-    # Extract words and filter
-    words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
-    keywords = [word for word in words if word not in common_words]
-
-    # Return unique keywords, limited by max_keywords
-    unique_keywords = list(dict.fromkeys(keywords))  # Preserve order while removing duplicates
-    return unique_keywords[:max_keywords]

@@ -70,3 +70,29 @@ notes/
     └── 2024-01-17_vacation_planning.md
 ```
 """
+
+
+CLASSIFICATION_PROMPT = """
+You are a note classification assistant. Your task is to classify the following note into an appropriate category and suggest a filename.
+
+IMPORTANT INSTRUCTIONS:
+1. STRONGLY PREFER existing categories over creating new ones
+2. Only suggest a new category if the note clearly doesn't fit any existing category
+3. Use lowercase with underscores for category names (e.g., "work_projects", "cooking_recipes")
+4. Provide a confidence score between 0.0 and 1.0
+5. Suggest a descriptive filename without extension
+6. Respond ONLY with valid JSON in the exact format shown below
+
+EXISTING CATEGORIES: {existing_classes_str}
+
+NOTE TO CLASSIFY:
+"{note_text}"
+
+Respond with JSON in this exact format:
+{{
+    "class": "category_name",
+    "confidence": 0.95,
+    "suggested_filename": "descriptive_filename_without_extension"
+}}
+
+JSON Response:"""
