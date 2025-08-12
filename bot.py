@@ -3,18 +3,18 @@ Telegram Bot for Note Classification and Organization.
 Main bot application with handlers for user interactions.
 """
 
-import asyncio
 import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
+from functools import wraps
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, 
-    CommandHandler, 
-    MessageHandler, 
+    Application,
+    CommandHandler,
+    MessageHandler,
     CallbackQueryHandler,
     filters,
     ContextTypes
@@ -38,24 +38,103 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# Authorization decorators
+def user_allowed(func):
+    """
+    Decorator to check if a user is authorized to use basic bot functions.
+
+    Checks config.is_user_allowed(user_id) and sends an error message if unauthorized.
+    Returns early without executing the decorated function if authorization fails.
+    """
+    @wraps(func)
+    async def wrapper(self, update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        # Handle cases where update might not have an effective user
+        if not update.effective_user:
+            logger.warning("Received update without effective user")
+            if update.effective_message:
+                await update.effective_message.reply_text(
+                    "❌ Unable to identify user. Please try again."
+                )
+            return
+
+        user_id = update.effective_user.id
+
+        if not config.is_user_allowed(user_id):
+            error_message = "❌ Sorry, you are not authorized to use this bot."
+
+            # Try to send error message using the most appropriate method
+            if update.message:
+                await update.message.reply_text(error_message)
+            elif update.effective_message:
+                await update.effective_message.reply_text(error_message)
+            else:
+                logger.warning(f"Could not send authorization error to user {user_id}")
+
+            logger.warning(f"Unauthorized access attempt by user {user_id}")
+            return
+
+        # User is authorized, proceed with the original function
+        return await func(self, update, context, *args, **kwargs)
+
+    return wrapper
+
+
+def admin_required(func):
+    """
+    Decorator to check if a user has admin privileges.
+
+    Checks config.is_admin_user(user_id) and sends an error message if not an admin.
+    Returns early without executing the decorated function if authorization fails.
+    """
+    @wraps(func)
+    async def wrapper(self, update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        # Handle cases where update might not have an effective user
+        if not update.effective_user:
+            logger.warning("Received update without effective user")
+            if update.effective_message:
+                await update.effective_message.reply_text(
+                    "❌ Unable to identify user. Please try again."
+                )
+            return
+
+        user_id = update.effective_user.id
+
+        # First check if user is allowed at all
+        if not config.is_user_allowed(user_id):
+            error_message = "❌ Sorry, you are not authorized to use this bot."
+        elif not config.is_admin_user(user_id):
+            error_message = "❌ This command requires administrator privileges."
+        else:
+            # User is authorized and is admin, proceed with the original function
+            return await func(self, update, context, *args, **kwargs)
+
+        # Send appropriate error message
+        if update.message:
+            await update.message.reply_text(error_message)
+        elif update.effective_message:
+            await update.effective_message.reply_text(error_message)
+        else:
+            logger.warning(f"Could not send admin error to user {user_id}")
+
+        logger.warning(f"Admin access attempt by non-admin user {user_id}")
+        return
+
+    return wrapper
+
+
 class TelegramNotesBot:
     """Main Telegram bot class for note classification and organization."""
-    
+
     def __init__(self):
         self.ollama_client = OllamaClient()
         self.file_manager = FileManager()
         self.pending_classifications: Dict[int, Dict] = {}  # Store pending user confirmations
-        
+
+    @user_allowed
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle the /start command."""
         user = update.effective_user
-        
-        if not config.is_user_allowed(user.id):
-            await update.message.reply_text(
-                "❌ Sorry, you are not authorized to use this bot."
-            )
-            return
-            
+
         welcome_message = f"""
 🤖 **Welcome to the Telegram Notes Bot!**
 
@@ -75,10 +154,10 @@ Hi {user.first_name}! I'm here to help you organize your notes using AI classifi
 
 **Just send me a message to get started!** 📝
         """
-        
+
         await update.message.reply_text(welcome_message, parse_mode='Markdown')
         logger.info(f"User {user.id} ({user.username}) started the bot")
-        
+
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle the /help command."""
         help_message = """
@@ -135,62 +214,56 @@ notes/
 
 Need help? Just ask! 🤖
         """
-        
+
         await update.message.reply_text(help_message, parse_mode='Markdown')
-        
+
+    @user_allowed
     async def classes_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle the /classes command."""
-        if not config.is_user_allowed(update.effective_user.id):
-            await update.message.reply_text("❌ You are not authorized to use this bot.")
-            return
-            
+
         existing_classes = self.file_manager.get_existing_classes()
-        
+
         if not existing_classes:
             await update.message.reply_text(
                 "📂 No note categories exist yet.\n\nSend me your first note to get started!"
             )
             return
-            
+
         class_list = "\n".join(f"• `{cls}`" for cls in existing_classes)
         message = f"📂 **Existing Note Categories ({len(existing_classes)}):**\n\n{class_list}"
-        
+
         await update.message.reply_text(message, parse_mode='Markdown')
-        
+
+    @user_allowed
     async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle the /stats command."""
-        if not config.is_user_allowed(update.effective_user.id):
-            await update.message.reply_text("❌ You are not authorized to use this bot.")
-            return
-            
+
         stats = self.file_manager.get_class_stats()
         total_notes = sum(stats.values())
-        
+
         if not stats:
             await update.message.reply_text(
                 "📊 No notes found.\n\nSend me your first note to get started!"
             )
             return
-            
+
         # Sort by note count (descending)
         sorted_stats = sorted(stats.items(), key=lambda x: x[1], reverse=True)
-        
+
         stats_lines = []
         for class_name, count in sorted_stats:
             percentage = (count / total_notes * 100) if total_notes > 0 else 0
             stats_lines.append(f"• `{class_name}`: {count} notes ({percentage:.1f}%)")
-            
+
         stats_text = "\n".join(stats_lines)
         message = f"📊 **Note Statistics:**\n\n{stats_text}\n\n**Total Notes:** {total_notes}"
-        
+
         await update.message.reply_text(message, parse_mode='Markdown')
-        
+
+    @user_allowed
     async def recent_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle the /recent command."""
-        if not config.is_user_allowed(update.effective_user.id):
-            await update.message.reply_text("❌ You are not authorized to use this bot.")
-            return
-            
+
         # Parse limit from command arguments
         limit = 10
         if context.args:
@@ -200,73 +273,71 @@ Need help? Just ask! 🤖
             except ValueError:
                 await update.message.reply_text("❌ Invalid limit. Please provide a number between 1 and 50.")
                 return
-                
+
         recent_notes = self.file_manager.get_recent_notes(limit=limit)
-        
+
         if not recent_notes:
             await update.message.reply_text("📝 No notes found.")
             return
-            
+
         notes_lines = []
         for note in recent_notes:
             created_time = note['created_time'].strftime("%Y-%m-%d %H:%M")
             filename = note['filename'].replace('.md', '')
             notes_lines.append(f"• `{note['class_name']}` - {filename} ({created_time})")
-            
+
         notes_text = "\n".join(notes_lines)
         message = f"📝 **Recent Notes ({len(recent_notes)}):**\n\n{notes_text}"
-        
+
         await update.message.reply_text(message, parse_mode='Markdown')
-        
+
+    @user_allowed
     async def handle_note_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming note messages."""
         user = update.effective_user
-        
-        if not config.is_user_allowed(user.id):
-            await update.message.reply_text("❌ You are not authorized to use this bot.")
-            return
-            
+
         note_text = update.message.text
-        
+
         if len(note_text) > config.MAX_MESSAGE_LENGTH:
             await update.message.reply_text(
                 f"❌ Note is too long. Maximum length is {config.MAX_MESSAGE_LENGTH} characters."
             )
             return
-            
+
         # Send processing message
         processing_msg = await update.message.reply_text("🔄 Classifying your note...")
-        
+
         try:
             # Get existing classes for context
             existing_classes = self.file_manager.get_existing_classes()
-            
+
             # Classify the note
             classification_result = None
             if self.ollama_client.is_available():
                 classification_result = self.ollama_client.classify_note(note_text, existing_classes)
-            
+
             if not classification_result:
                 # Use fallback classification
                 classification_result = self.ollama_client.get_fallback_classification(note_text)
                 await processing_msg.edit_text("⚠️ AI service unavailable, using fallback classification...")
-                
+
             # Handle new class suggestions
             if classification_result.is_new_class and classification_result.confidence >= config.DEFAULT_CONFIDENCE_THRESHOLD:
-                await self._handle_new_class_suggestion(update, context, note_text, classification_result, processing_msg)
+                await self._handle_new_class_suggestion(update, context, note_text, classification_result,
+                                                        processing_msg)
             else:
                 # Save the note directly
                 await self._save_note_directly(update, context, note_text, classification_result, processing_msg)
-                
+
         except Exception as e:
             logger.error(f"Error processing note from user {user.id}: {e}")
             await processing_msg.edit_text("❌ An error occurred while processing your note. Please try again.")
-            
+
     async def _handle_new_class_suggestion(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
-                                         note_text: str, classification_result, processing_msg) -> None:
+                                           note_text: str, classification_result, processing_msg) -> None:
         """Handle suggestions for new note classes."""
         user_id = update.effective_user.id
-        
+
         # Store pending classification
         self.pending_classifications[user_id] = {
             'note_text': note_text,
@@ -274,16 +345,16 @@ Need help? Just ask! 🤖
             'original_message_id': update.message.message_id,
             'timestamp': datetime.now()
         }
-        
+
         # Create inline keyboard for user choice
         keyboard = [
-            [InlineKeyboardButton(f"✅ Use '{classification_result.class_name}'", 
-                                callback_data=f"accept_class_{user_id}")],
-            [InlineKeyboardButton("✏️ Choose different category", 
-                                callback_data=f"custom_class_{user_id}")],
+            [InlineKeyboardButton(f"✅ Use '{classification_result.class_name}'",
+                                  callback_data=f"accept_class_{user_id}")],
+            [InlineKeyboardButton("✏️ Choose different category",
+                                  callback_data=f"custom_class_{user_id}")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
+
         confidence_percent = int(classification_result.confidence * 100)
         message = (
             f"🤔 I suggest creating a new category **'{classification_result.class_name}'** "
@@ -291,11 +362,11 @@ Need help? Just ask! 🤖
             f"**Note preview:** {truncate_text(note_text, 100)}\n\n"
             f"What would you like to do?"
         )
-        
+
         await processing_msg.edit_text(message, parse_mode='Markdown', reply_markup=reply_markup)
 
     async def _save_note_directly(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
-                                note_text: str, classification_result, processing_msg) -> None:
+                                  note_text: str, classification_result, processing_msg) -> None:
         """Save a note directly without user confirmation."""
         user = update.effective_user
 
@@ -334,6 +405,7 @@ Need help? Just ask! 🤖
 
         await processing_msg.edit_text(message, parse_mode='Markdown')
 
+    @user_allowed
     async def handle_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle inline keyboard button presses."""
         query = update.callback_query
@@ -341,10 +413,6 @@ Need help? Just ask! 🤖
 
         user_id = query.from_user.id
         data = query.data
-
-        if not config.is_user_allowed(user_id):
-            await query.edit_message_text("❌ You are not authorized to use this bot.")
-            return
 
         if user_id not in self.pending_classifications:
             await query.edit_message_text("❌ No pending classification found. Please send a new note.")
@@ -367,6 +435,7 @@ Need help? Just ask! 🤖
             )
             # Keep the pending classification for the next message
 
+    @user_allowed
     async def handle_custom_class_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle custom class name input from user."""
         user_id = update.effective_user.id
@@ -459,11 +528,9 @@ Need help? Just ask! 🤖
 
         await message.edit_text(response, parse_mode='Markdown')
 
+    @user_allowed
     async def search_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle the /search command."""
-        if not config.is_user_allowed(update.effective_user.id):
-            await update.message.reply_text("❌ You are not authorized to use this bot.")
-            return
 
         if not context.args:
             await update.message.reply_text(
