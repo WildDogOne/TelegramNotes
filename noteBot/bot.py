@@ -18,9 +18,11 @@ from telegram.ext import (
     filters,
     ContextTypes
 )
+import telegramify_markdown
+import telegramify_markdown.customize as customize
 
 from noteBot.config import config
-from noteBot.constants import HELP_MESSAGE, WELCOME_MESSAGE
+from noteBot.constants import HELP_MESSAGE, WELCOME_MESSAGE, NEW_CLASS_SUGGESTION_MESSAGE
 from noteBot.ollama_client import OllamaClient
 from noteBot.file_manager import FileManager, NoteMetadata
 from noteBot.utils import truncate_text, user_allowed
@@ -36,6 +38,7 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
 
 class TelegramNotesBot:
     """Main Telegram bot class for note classification and organization."""
@@ -159,7 +162,7 @@ class TelegramNotesBot:
                 classification_result = self.ollama_client.classify_note(note_text, existing_classes)
 
             # Handle new class suggestions
-            if classification_result.is_new_class and classification_result.confidence >= config.DEFAULT_CONFIDENCE_THRESHOLD:
+            if classification_result.is_new_class:
                 await self._handle_new_class_suggestion(update, context, note_text, classification_result,
                                                         processing_msg)
             else:
@@ -183,24 +186,25 @@ class TelegramNotesBot:
             'timestamp': datetime.now()
         }
 
+
         # Create inline keyboard for user choice
         keyboard = [
-            [InlineKeyboardButton(f"✅ Use '{classification_result.class_name}'",
+            [InlineKeyboardButton(f"Use '{classification_result.class_name}'",
                                   callback_data=f"accept_class_{user_id}")],
-            [InlineKeyboardButton("✏️ Choose different category",
+            [InlineKeyboardButton("Choose different category",
                                   callback_data=f"custom_class_{user_id}")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         confidence_percent = int(classification_result.confidence * 100)
-        message = (
-            f"🤔 I suggest creating a new category **'{classification_result.class_name}'** "
-            f"for your note (confidence: {confidence_percent}%).\n\n"
-            f"**Note preview:** {truncate_text(note_text, 100)}\n\n"
-            f"What would you like to do?"
-        )
 
-        await processing_msg.edit_text(message, parse_mode='Markdown', reply_markup=reply_markup)
+        message = NEW_CLASS_SUGGESTION_MESSAGE.format(
+            class_name=classification_result.class_name,
+            confidence_percent=confidence_percent,
+        )
+        message = telegramify_markdown.markdownify(message)
+
+        await processing_msg.edit_text(message, parse_mode='MarkdownV2', reply_markup=reply_markup)
 
     async def _save_note_directly(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
                                   note_text: str, classification_result, processing_msg) -> None:
@@ -413,13 +417,12 @@ class TelegramNotesBot:
         results_text = "\n".join(results_lines)
         total_results = len(results)
         showing = min(10, total_results)
-
-        message = f"🔍 **Search Results for '{query}':**\n\n{results_text}"
+        message = telegramify_markdown.markdownify(f"🔍 **Search Results for '{query}':**\n\n{results_text}")
 
         if total_results > 10:
             message += f"\n\n*Showing {showing} of {total_results} results*"
 
-        await update.message.reply_text(message, parse_mode='Markdown')
+        await update.message.reply_text(message, parse_mode='MarkdownV2')
 
     async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle errors that occur during bot operation."""
@@ -434,70 +437,3 @@ class TelegramNotesBot:
             except Exception:
                 pass  # Ignore errors when trying to send error message
 
-
-def main() -> None:
-    """Main function to run the Telegram bot."""
-    logger.info("Starting Telegram Notes Bot...")
-
-    # Validate configuration
-    try:
-        if not config.TELEGRAM_BOT_TOKEN:
-            logger.error("TELEGRAM_BOT_TOKEN not found in environment variables")
-            sys.exit(1)
-
-        logger.info(f"Notes directory: {config.NOTES_DIRECTORY}")
-        logger.info(f"Ollama URL: {config.OLLAMA_BASE_URL}")
-        logger.info(f"Ollama Model: {config.OLLAMA_MODEL}")
-
-    except Exception as e:
-        logger.error(f"Configuration error: {e}")
-        sys.exit(1)
-
-    # Create bot instance
-    bot = TelegramNotesBot()
-
-    # Test Ollama connection
-    if bot.ollama_client.is_available():
-        logger.info("✅ Ollama service is available")
-    else:
-        logger.warning("⚠️ Ollama service is not available - using fallback classification")
-
-    # Create application
-    application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
-
-    # Add command handlers
-    application.add_handler(CommandHandler("start", bot.start_command))
-    application.add_handler(CommandHandler("help", bot.help_command))
-    application.add_handler(CommandHandler("classes", bot.classes_command))
-    application.add_handler(CommandHandler("stats", bot.stats_command))
-    application.add_handler(CommandHandler("recent", bot.recent_command))
-    application.add_handler(CommandHandler("search", bot.search_command))
-
-    # Add callback query handler for inline keyboards
-    application.add_handler(CallbackQueryHandler(bot.handle_callback_query))
-
-    # Add message handler for notes (with custom class handling)
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        bot.handle_custom_class_message
-    ))
-
-    # Add error handler
-    application.add_error_handler(bot.error_handler)
-
-    # Start the bot
-    logger.info("🤖 Bot is starting...")
-    try:
-        application.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True
-        )
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
-    except Exception as e:
-        logger.error(f"Error running bot: {e}")
-        sys.exit(1)
-
-
-if __name__ == '__main__':
-    main()

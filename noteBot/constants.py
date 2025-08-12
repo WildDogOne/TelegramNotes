@@ -96,3 +96,11 @@ Respond with JSON in this exact format:
 }}
 
 JSON Response:"""
+
+
+NEW_CLASS_SUGGESTION_MESSAGE = """
+I suggest creating a new category **'{class_name}'** 
+for your note (confidence: {confidence_percent}%).
+
+What would you like to do?
+"""
