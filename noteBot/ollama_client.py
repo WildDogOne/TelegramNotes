@@ -154,52 +154,9 @@ class OllamaClient:
                 suggested_filename=suggested_filename,
                 is_new_class=is_new_class,
             )
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON from Ollama response: {e}")
-            logger.debug(f"Raw response: {data}")
         except (ValueError, TypeError) as e:
             logger.error(f"Invalid data types in Ollama response: {e}")
         except Exception as e:
             logger.error(f"Unexpected error parsing Ollama response: {e}")
 
         return None
-
-    def get_fallback_classification(self, note_text: str) -> OllamaClassificationResult:
-        """
-        Provide a fallback classification when Ollama is unavailable.
-        
-        Args:
-            note_text: The note content
-            
-        Returns:
-            A basic classification result
-        """
-        # Simple keyword-based fallback classification
-        text_lower = note_text.lower()
-
-        # Basic classification rules
-        if any(word in text_lower for word in ['recipe', 'cooking', 'food', 'meal', 'ingredient']):
-            class_name = "cooking"
-        elif any(word in text_lower for word in ['work', 'meeting', 'project', 'deadline', 'task']):
-            class_name = "work"
-        elif any(word in text_lower for word in ['travel', 'trip', 'vacation', 'flight', 'hotel']):
-            class_name = "travel"
-        elif any(word in text_lower for word in ['idea', 'thought', 'remember', 'note']):
-            class_name = "ideas"
-        else:
-            class_name = "general"
-
-        # Generate simple filename from first few words
-        words = note_text.split()[:5]
-        suggested_filename = "_".join(word.lower() for word in words if word.isalnum())
-        if not suggested_filename:
-            suggested_filename = "note"
-
-        return OllamaClassificationResult(
-            class_name=class_name,
-            confidence=0.5,  # Low confidence for fallback
-            suggested_filename=suggested_filename,
-            is_new_class=True,  # Assume new since we can't check existing classes
-            raw_response="Fallback classification (Ollama unavailable)"
-        )

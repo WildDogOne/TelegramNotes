@@ -158,11 +158,6 @@ class TelegramNotesBot:
             if self.ollama_client.is_available():
                 classification_result = self.ollama_client.classify_note(note_text, existing_classes)
 
-            if not classification_result:
-                # Use fallback classification
-                classification_result = self.ollama_client.get_fallback_classification(note_text)
-                await processing_msg.edit_text("⚠️ AI service unavailable, using fallback classification...")
-
             # Handle new class suggestions
             if classification_result.is_new_class and classification_result.confidence >= config.DEFAULT_CONFIDENCE_THRESHOLD:
                 await self._handle_new_class_suggestion(update, context, note_text, classification_result,
