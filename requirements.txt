@@ -1,0 +1,28 @@
+# Telegram Bot Dependencies
+python-telegram-bot>=22.0
+
+# HTTP Client for Ollama
+requests>=2.31.0
+
+# Date and time handling
+python-dateutil>=2.8.2
+
+# YAML processing for frontmatter
+PyYAML>=6.0
+
+# Environment variable management
+python-dotenv>=1.0.0
+
+# Logging enhancements
+colorlog>=6.7.0
+
+# Testing dependencies
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.11.0
+
+# Development dependencies
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.5.0
+
