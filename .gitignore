@@ -207,3 +207,4 @@ marimo/_lsp/
 __marimo__/
 .env
 telegram_notes_bot.log
+notes

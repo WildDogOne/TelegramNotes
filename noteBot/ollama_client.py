@@ -5,9 +5,14 @@ Handles communication with Ollama API, error handling, and response parsing.
 
 import json
 import logging
+from http.client import responses
+
 import requests
 from typing import List, Optional
 from datetime import datetime
+from pydantic import BaseModel
+from ollama import generate
+from ollama import Client
 
 from noteBot.config import config
 from noteBot.utils import extract_keywords
@@ -17,8 +22,8 @@ logger = logging.getLogger(__name__)
 
 class OllamaClassificationResult:
     """Data class for classification results."""
-    
-    def __init__(self, class_name: str, confidence: float, suggested_filename: str, 
+
+    def __init__(self, class_name: str, confidence: float, suggested_filename: str,
                  is_new_class: bool = False, raw_response: Optional[str] = None):
         self.class_name = class_name
         self.confidence = confidence
@@ -30,13 +35,13 @@ class OllamaClassificationResult:
 
 class OllamaClient:
     """Client for interacting with Ollama API for note classification."""
-    
+
     def __init__(self):
         self.base_url = config.OLLAMA_BASE_URL
         self.model = config.OLLAMA_MODEL
         self.timeout = config.OLLAMA_TIMEOUT
         self.session = requests.Session()
-        
+
     def is_available(self) -> bool:
         """Check if Ollama service is available."""
         try:
@@ -48,7 +53,44 @@ class OllamaClient:
         except Exception as e:
             logger.warning(f"Ollama service not available: {e}")
             return False
-            
+
+    def _ollama_generate(
+            self,
+            prompt: str,
+            output_format: BaseModel,
+            model: str = "mistral-small",
+            tokens: int = -1,
+            context: int = 7168,
+            repeat_last: int = 64,
+            temperature: float = 0.8,
+    ):
+
+        """Send request to Ollama API."""
+        try:
+            if output_format:
+                format = output_format.model_json_schema()
+            else:
+                format = None
+            client = Client(
+                host=config.get_ollama_url(),
+                headers={'x-some-header': 'some-value'}
+            )
+            response = client.generate(
+                model=model,
+                format=format,
+                prompt=prompt,
+                options={
+                    "num_predict": tokens,
+                    "num_ctx": context,
+                    "repeat_last_n": repeat_last,
+                    "temperature": temperature,
+                },
+            )
+            return response
+        except Exception as e:
+            logger.error(f"Error sending request to Ollama: {e}")
+            return None
+
     def classify_note(self, note_text: str, existing_classes: List[str]) -> Optional[OllamaClassificationResult]:
         """
         Classify a note using Ollama AI.
@@ -60,25 +102,29 @@ class OllamaClient:
         Returns:
             OllamaClassificationResult or None if classification fails
         """
+
+        class OutputFormat(BaseModel):
+            class_name: str
+            confidence: int
+            suggested_filename: str
+
         try:
             prompt = self._build_classification_prompt(note_text, existing_classes)
-            response = self._send_request(prompt)
-            
+            response = self._ollama_generate(prompt=prompt, output_format=OutputFormat, model=self.model)
             if response:
+                response = json.loads(response.response)
                 return self._parse_classification_response(response, existing_classes)
-                
+
         except Exception as e:
             logger.error(f"Error during note classification: {e}")
-            
+
         return None
-        
+
     def _build_classification_prompt(self, note_text: str, existing_classes: List[str]) -> str:
         """Build the classification prompt for Ollama."""
-        keywords = extract_keywords(note_text, max_keywords=5)
-        keywords_str = ", ".join(keywords) if keywords else "none identified"
-        
+
         existing_classes_str = ", ".join(f'"{cls}"' for cls in existing_classes) if existing_classes else "none"
-        
+
         prompt = f"""You are a note classification assistant. Your task is to classify the following note into an appropriate category and suggest a filename.
 
 IMPORTANT INSTRUCTIONS:
@@ -94,8 +140,6 @@ EXISTING CATEGORIES: {existing_classes_str}
 NOTE TO CLASSIFY:
 "{note_text}"
 
-EXTRACTED KEYWORDS: {keywords_str}
-
 Respond with JSON in this exact format:
 {{
     "class": "category_name",
@@ -106,100 +150,47 @@ Respond with JSON in this exact format:
 JSON Response:"""
 
         return prompt
-        
-    def _send_request(self, prompt: str) -> Optional[str]:
-        """Send request to Ollama API."""
+
+    def _parse_classification_response(self, data: dict, existing_classes: List[str]) -> Optional[
+        OllamaClassificationResult]:
         try:
-            payload = {
-                "model": self.model,
-                "prompt": prompt,
-                "stream": False,
-                "options": {
-                    "temperature": 0.3,  # Lower temperature for more consistent classification
-                    "top_p": 0.9,
-                    "num_predict": 200   # Limit response length
-                }
-            }
-            
-            logger.debug(f"Sending request to Ollama: {config.get_ollama_url('api/generate')}")
-            
-            response = self.session.post(
-                config.get_ollama_url("api/generate"),
-                json=payload,
-                timeout=self.timeout
-            )
-            
-            response.raise_for_status()
-            result = response.json()
-            
-            if "response" in result:
-                return result["response"].strip()
-            else:
-                logger.error(f"Unexpected Ollama response format: {result}")
-                return None
-                
-        except requests.exceptions.Timeout:
-            logger.error(f"Ollama request timed out after {self.timeout} seconds")
-        except requests.exceptions.ConnectionError:
-            logger.error("Cannot connect to Ollama service")
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"Ollama HTTP error: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error in Ollama request: {e}")
-            
-        return None
-        
-    def _parse_classification_response(self, response: str, existing_classes: List[str]) -> Optional[OllamaClassificationResult]:
-        """Parse the JSON response from Ollama."""
-        try:
-            # Try to extract JSON from the response
-            json_start = response.find('{')
-            json_end = response.rfind('}') + 1
-            
-            if json_start == -1 or json_end == 0:
-                logger.error("No JSON found in Ollama response")
-                return None
-                
-            json_str = response[json_start:json_end]
-            data = json.loads(json_str)
-            
+
             # Validate required fields
-            required_fields = ["class", "confidence", "suggested_filename"]
+            required_fields = ["class_name", "confidence", "suggested_filename"]
             for field in required_fields:
                 if field not in data:
                     logger.error(f"Missing required field '{field}' in Ollama response")
                     return None
-                    
-            class_name = str(data["class"]).strip().lower()
+
+            class_name = str(data["class_name"]).strip().lower()
             confidence = float(data["confidence"])
             suggested_filename = str(data["suggested_filename"]).strip()
-            
+
             # Validate confidence range
             if not (0.0 <= confidence <= 1.0):
                 logger.warning(f"Invalid confidence value: {confidence}, clamping to valid range")
                 confidence = max(0.0, min(1.0, confidence))
-                
+
             # Check if this is a new class
             is_new_class = class_name not in [cls.lower() for cls in existing_classes]
-            
+
             return OllamaClassificationResult(
                 class_name=class_name,
                 confidence=confidence,
                 suggested_filename=suggested_filename,
                 is_new_class=is_new_class,
-                raw_response=response
             )
-            
+
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON from Ollama response: {e}")
-            logger.debug(f"Raw response: {response}")
+            logger.debug(f"Raw response: {data}")
         except (ValueError, TypeError) as e:
             logger.error(f"Invalid data types in Ollama response: {e}")
         except Exception as e:
             logger.error(f"Unexpected error parsing Ollama response: {e}")
-            
+
         return None
-        
+
     def get_fallback_classification(self, note_text: str) -> OllamaClassificationResult:
         """
         Provide a fallback classification when Ollama is unavailable.
@@ -212,7 +203,7 @@ JSON Response:"""
         """
         # Simple keyword-based fallback classification
         text_lower = note_text.lower()
-        
+
         # Basic classification rules
         if any(word in text_lower for word in ['recipe', 'cooking', 'food', 'meal', 'ingredient']):
             class_name = "cooking"
@@ -224,13 +215,13 @@ JSON Response:"""
             class_name = "ideas"
         else:
             class_name = "general"
-            
+
         # Generate simple filename from first few words
         words = note_text.split()[:5]
         suggested_filename = "_".join(word.lower() for word in words if word.isalnum())
         if not suggested_filename:
             suggested_filename = "note"
-            
+
         return OllamaClassificationResult(
             class_name=class_name,
             confidence=0.5,  # Low confidence for fallback

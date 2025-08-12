@@ -49,16 +49,14 @@ class TelegramNotesBot:
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle the /start command."""
         user = update.effective_user
-
         welcome_message = WELCOME_MESSAGE.format(user=user)
-
         await update.message.reply_text(welcome_message, parse_mode='Markdown')
         logger.info(f"User {user.id} ({user.username}) started the bot")
 
+    @user_allowed
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle the /help command."""
         help_message = HELP_MESSAGE
-
         await update.message.reply_text(help_message, parse_mode='Markdown')
 
     @user_allowed
@@ -69,12 +67,12 @@ class TelegramNotesBot:
 
         if not existing_classes:
             await update.message.reply_text(
-                "📂 No note categories exist yet.\n\nSend me your first note to get started!"
+                "No note categories exist yet.\n\nSend me your first note to get started!"
             )
             return
 
         class_list = "\n".join(f"• `{cls}`" for cls in existing_classes)
-        message = f"📂 **Existing Note Categories ({len(existing_classes)}):**\n\n{class_list}"
+        message = f"**Existing Note Categories ({len(existing_classes)}):**\n\n{class_list}"
 
         await update.message.reply_text(message, parse_mode='Markdown')
 
@@ -87,7 +85,7 @@ class TelegramNotesBot:
 
         if not stats:
             await update.message.reply_text(
-                "📊 No notes found.\n\nSend me your first note to get started!"
+                "No notes found.\n\nSend me your first note to get started!"
             )
             return
 
