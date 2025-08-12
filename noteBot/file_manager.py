@@ -9,8 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from config import config
-from utils import (
+from noteBot.config import config
+from noteBot.utils import (
     sanitize_filename, 
     sanitize_class_name, 
     generate_unique_filename,

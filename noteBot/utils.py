@@ -8,6 +8,97 @@ import unicodedata
 from datetime import datetime
 from typing import Dict, Any, Optional
 from pathlib import Path
+from functools import wraps
+
+from telegram import Update
+from telegram.ext import ContextTypes
+from noteBot.config import config
+
+
+# Authorization decorators
+def user_allowed(func):
+    """
+    Decorator to check if a user is authorized to use basic bot functions.
+
+    Checks config.is_user_allowed(user_id) and sends an error message if unauthorized.
+    Returns early without executing the decorated function if authorization fails.
+    """
+
+    @wraps(func)
+    async def wrapper(self, update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        # Handle cases where update might not have an effective user
+        if not update.effective_user:
+            logger.warning("Received update without effective user")
+            if update.effective_message:
+                await update.effective_message.reply_text(
+                    "❌ Unable to identify user. Please try again."
+                )
+            return
+
+        user_id = update.effective_user.id
+
+        if not config.is_user_allowed(user_id):
+            error_message = "❌ Sorry, you are not authorized to use this bot."
+
+            # Try to send error message using the most appropriate method
+            if update.message:
+                await update.message.reply_text(error_message)
+            elif update.effective_message:
+                await update.effective_message.reply_text(error_message)
+            else:
+                logger.warning(f"Could not send authorization error to user {user_id}")
+
+            logger.warning(f"Unauthorized access attempt by user {user_id}")
+            return
+
+        # User is authorized, proceed with the original function
+        return await func(self, update, context, *args, **kwargs)
+
+    return wrapper
+
+
+def admin_required(func):
+    """
+    Decorator to check if a user has admin privileges.
+
+    Checks config.is_admin_user(user_id) and sends an error message if not an admin.
+    Returns early without executing the decorated function if authorization fails.
+    """
+
+    @wraps(func)
+    async def wrapper(self, update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        # Handle cases where update might not have an effective user
+        if not update.effective_user:
+            logger.warning("Received update without effective user")
+            if update.effective_message:
+                await update.effective_message.reply_text(
+                    "❌ Unable to identify user. Please try again."
+                )
+            return
+
+        user_id = update.effective_user.id
+
+        # First check if user is allowed at all
+        if not config.is_user_allowed(user_id):
+            error_message = "❌ Sorry, you are not authorized to use this bot."
+        elif not config.is_admin_user(user_id):
+            error_message = "❌ This command requires administrator privileges."
+        else:
+            # User is authorized and is admin, proceed with the original function
+            return await func(self, update, context, *args, **kwargs)
+
+        # Send appropriate error message
+        if update.message:
+            await update.message.reply_text(error_message)
+        elif update.effective_message:
+            await update.effective_message.reply_text(error_message)
+        else:
+            logger.warning(f"Could not send admin error to user {user_id}")
+
+        logger.warning(f"Admin access attempt by non-admin user {user_id}")
+        return
+
+    return wrapper
 
 
 def sanitize_filename(filename: str, max_length: int = 100) -> str:
@@ -23,18 +114,18 @@ def sanitize_filename(filename: str, max_length: int = 100) -> str:
     """
     # Normalize unicode characters
     filename = unicodedata.normalize('NFKD', filename)
-    
+
     # Remove or replace problematic characters
     filename = re.sub(r'[<>:"/\\|?*]', '', filename)  # Windows forbidden chars
-    filename = re.sub(r'[^\w\s\-_.]', '', filename)   # Keep only alphanumeric, spaces, hyphens, underscores, dots
-    filename = re.sub(r'\s+', '_', filename)          # Replace spaces with underscores
-    filename = re.sub(r'_+', '_', filename)           # Collapse multiple underscores
-    filename = filename.strip('._')                   # Remove leading/trailing dots and underscores
-    
+    filename = re.sub(r'[^\w\s\-_.]', '', filename)  # Keep only alphanumeric, spaces, hyphens, underscores, dots
+    filename = re.sub(r'\s+', '_', filename)  # Replace spaces with underscores
+    filename = re.sub(r'_+', '_', filename)  # Collapse multiple underscores
+    filename = filename.strip('._')  # Remove leading/trailing dots and underscores
+
     # Ensure it's not empty
     if not filename:
         filename = "untitled"
-        
+
     # Truncate if too long, but preserve extension if present
     if len(filename) > max_length:
         if '.' in filename:
@@ -43,7 +134,7 @@ def sanitize_filename(filename: str, max_length: int = 100) -> str:
             filename = f"{name[:max_name_length]}.{ext}"
         else:
             filename = filename[:max_length]
-            
+
     return filename
 
 
@@ -60,14 +151,14 @@ def sanitize_class_name(class_name: str) -> str:
     # Convert to lowercase and replace spaces with underscores
     class_name = class_name.lower().strip()
     class_name = re.sub(r'[^\w\s\-]', '', class_name)  # Keep only alphanumeric, spaces, hyphens
-    class_name = re.sub(r'\s+', '_', class_name)       # Replace spaces with underscores
-    class_name = re.sub(r'_+', '_', class_name)        # Collapse multiple underscores
-    class_name = class_name.strip('_')                 # Remove leading/trailing underscores
-    
+    class_name = re.sub(r'\s+', '_', class_name)  # Replace spaces with underscores
+    class_name = re.sub(r'_+', '_', class_name)  # Collapse multiple underscores
+    class_name = class_name.strip('_')  # Remove leading/trailing underscores
+
     # Ensure it's not empty
     if not class_name:
         class_name = "uncategorized"
-        
+
     return class_name
 
 
@@ -84,14 +175,14 @@ def generate_unique_filename(directory: Path, base_filename: str) -> str:
     """
     if not (directory / base_filename).exists():
         return base_filename
-        
+
     # Split filename and extension
     if '.' in base_filename:
         name, ext = base_filename.rsplit('.', 1)
         ext = f".{ext}"
     else:
         name, ext = base_filename, ""
-        
+
     # Try numbered variations
     counter = 1
     while True:
@@ -171,7 +262,7 @@ def truncate_text(text: str, max_length: int = 100, suffix: str = "...") -> str:
     """
     if len(text) <= max_length:
         return text
-        
+
     truncated_length = max_length - len(suffix)
     return text[:truncated_length] + suffix
 
@@ -195,11 +286,11 @@ def extract_keywords(text: str, max_keywords: int = 5) -> list:
         'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her',
         'us', 'them', 'my', 'your', 'his', 'her', 'its', 'our', 'their'
     }
-    
+
     # Extract words and filter
     words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
     keywords = [word for word in words if word not in common_words]
-    
+
     # Return unique keywords, limited by max_keywords
     unique_keywords = list(dict.fromkeys(keywords))  # Preserve order while removing duplicates
     return unique_keywords[:max_keywords]

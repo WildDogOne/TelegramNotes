@@ -5,11 +5,10 @@ Unit tests for file manager functionality.
 import pytest
 import tempfile
 import shutil
-from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-from file_manager import FileManager, NoteMetadata
+from noteBot.file_manager import FileManager, NoteMetadata
 
 
 class TestFileManager:

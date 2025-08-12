@@ -29,7 +29,7 @@ class Config:
         self.OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "30"))
 
         # Notes Storage Configuration
-        self.NOTES_DIRECTORY: Path = Path(os.getenv("NOTES_DIRECTORY", "./notes"))
+        self.NOTES_DIRECTORY: Path = Path(os.getenv("NOTES_DIRECTORY", "../notes"))
         self.BACKUP_ENABLED: bool = os.getenv("BACKUP_ENABLED", "true").lower() == "true"
         self.MAX_FILENAME_LENGTH: int = int(os.getenv("MAX_FILENAME_LENGTH", "100"))
 
@@ -40,7 +40,7 @@ class Config:
 
         # Logging Configuration
         self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
-        self.LOG_FILE: str = os.getenv("LOG_FILE", "telegram_notes_bot.log")
+        self.LOG_FILE: str = os.getenv("LOG_FILE", "../telegram_notes_bot.log")
 
         # Optional User Authentication
         self.ALLOWED_USERS: Optional[List[int]] = None

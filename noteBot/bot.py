@@ -8,7 +8,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict
-from functools import wraps
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -20,10 +19,11 @@ from telegram.ext import (
     ContextTypes
 )
 
-from config import config
-from ollama_client import OllamaClient
-from file_manager import FileManager, NoteMetadata
-from utils import truncate_text
+from noteBot.config import config
+from noteBot.constants import HELP_MESSAGE, WELCOME_MESSAGE
+from noteBot.ollama_client import OllamaClient
+from noteBot.file_manager import FileManager, NoteMetadata
+from noteBot.utils import truncate_text, user_allowed
 
 # Configure logging
 logging.basicConfig(
@@ -36,91 +36,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-
-# Authorization decorators
-def user_allowed(func):
-    """
-    Decorator to check if a user is authorized to use basic bot functions.
-
-    Checks config.is_user_allowed(user_id) and sends an error message if unauthorized.
-    Returns early without executing the decorated function if authorization fails.
-    """
-    @wraps(func)
-    async def wrapper(self, update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
-        # Handle cases where update might not have an effective user
-        if not update.effective_user:
-            logger.warning("Received update without effective user")
-            if update.effective_message:
-                await update.effective_message.reply_text(
-                    "❌ Unable to identify user. Please try again."
-                )
-            return
-
-        user_id = update.effective_user.id
-
-        if not config.is_user_allowed(user_id):
-            error_message = "❌ Sorry, you are not authorized to use this bot."
-
-            # Try to send error message using the most appropriate method
-            if update.message:
-                await update.message.reply_text(error_message)
-            elif update.effective_message:
-                await update.effective_message.reply_text(error_message)
-            else:
-                logger.warning(f"Could not send authorization error to user {user_id}")
-
-            logger.warning(f"Unauthorized access attempt by user {user_id}")
-            return
-
-        # User is authorized, proceed with the original function
-        return await func(self, update, context, *args, **kwargs)
-
-    return wrapper
-
-
-def admin_required(func):
-    """
-    Decorator to check if a user has admin privileges.
-
-    Checks config.is_admin_user(user_id) and sends an error message if not an admin.
-    Returns early without executing the decorated function if authorization fails.
-    """
-    @wraps(func)
-    async def wrapper(self, update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
-        # Handle cases where update might not have an effective user
-        if not update.effective_user:
-            logger.warning("Received update without effective user")
-            if update.effective_message:
-                await update.effective_message.reply_text(
-                    "❌ Unable to identify user. Please try again."
-                )
-            return
-
-        user_id = update.effective_user.id
-
-        # First check if user is allowed at all
-        if not config.is_user_allowed(user_id):
-            error_message = "❌ Sorry, you are not authorized to use this bot."
-        elif not config.is_admin_user(user_id):
-            error_message = "❌ This command requires administrator privileges."
-        else:
-            # User is authorized and is admin, proceed with the original function
-            return await func(self, update, context, *args, **kwargs)
-
-        # Send appropriate error message
-        if update.message:
-            await update.message.reply_text(error_message)
-        elif update.effective_message:
-            await update.effective_message.reply_text(error_message)
-        else:
-            logger.warning(f"Could not send admin error to user {user_id}")
-
-        logger.warning(f"Admin access attempt by non-admin user {user_id}")
-        return
-
-    return wrapper
-
 
 class TelegramNotesBot:
     """Main Telegram bot class for note classification and organization."""
@@ -135,85 +50,14 @@ class TelegramNotesBot:
         """Handle the /start command."""
         user = update.effective_user
 
-        welcome_message = f"""
-🤖 **Welcome to the Telegram Notes Bot!**
-
-Hi {user.first_name}! I'm here to help you organize your notes using AI classification.
-
-**How it works:**
-1. Send me any text message as a note
-2. I'll classify it using AI and suggest a category
-3. Your note will be saved as a markdown file in an organized structure
-
-**Available commands:**
-• `/start` - Show this welcome message
-• `/classes` - List all existing note categories
-• `/stats` - Show statistics about your notes
-• `/recent` - Show your recent notes
-• `/help` - Detailed usage instructions
-
-**Just send me a message to get started!** 📝
-        """
+        welcome_message = WELCOME_MESSAGE.format(user=user)
 
         await update.message.reply_text(welcome_message, parse_mode='Markdown')
         logger.info(f"User {user.id} ({user.username}) started the bot")
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle the /help command."""
-        help_message = """
-📚 **Detailed Help - Telegram Notes Bot**
-
-**Basic Usage:**
-Simply send me any text message, and I'll:
-1. Analyze your note using AI
-2. Suggest an appropriate category
-3. Save it as a markdown file with metadata
-
-**Commands:**
-• `/start` - Welcome message and basic info
-• `/classes` - List all existing note categories
-• `/stats` - Show note count per category
-• `/recent [limit]` - Show recent notes (default: 10)
-• `/search <query>` - Search through your notes
-• `/help` - This detailed help
-
-**Examples:**
-• "I tried a new pasta recipe with garlic and olive oil"
-  → Likely classified as "cooking"
-  
-• "Meeting with John tomorrow at 2 PM about the project"
-  → Likely classified as "work" or "meetings"
-  
-• "Remember to book flight tickets for vacation"
-  → Likely classified as "travel" or "reminders"
-
-**Features:**
-• AI-powered classification using Ollama
-• Organized file structure: `notes/category/YYYY-MM-DD_filename.md`
-• Markdown files with metadata headers
-• Automatic backup system
-• Search functionality
-• Statistics and recent notes tracking
-
-**Note Categories:**
-The bot will try to reuse existing categories when possible. If it suggests a new category, you can approve it or provide your own preferred category name.
-
-**File Organization:**
-Your notes are saved in a structured format:
-```
-notes/
-├── cooking/
-│   ├── 2024-01-15_pasta_recipe.md
-│   └── 2024-01-16_chocolate_cake.md
-├── work/
-│   ├── 2024-01-15_project_meeting.md
-│   └── 2024-01-16_deadline_reminder.md
-└── travel/
-    └── 2024-01-17_vacation_planning.md
-```
-
-Need help? Just ask! 🤖
-        """
+        help_message = HELP_MESSAGE
 
         await update.message.reply_text(help_message, parse_mode='Markdown')
 

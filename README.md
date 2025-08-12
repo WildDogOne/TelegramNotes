@@ -74,7 +74,7 @@ TelegramNotes/
 
 5. **Run the bot**
    ```bash
-   python bot.py
+   python noteBot.py
    ```
 
 ## ⚙️ Configuration

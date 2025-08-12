@@ -6,11 +6,11 @@ Handles communication with Ollama API, error handling, and response parsing.
 import json
 import logging
 import requests
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 from datetime import datetime
 
-from config import config
-from utils import extract_keywords
+from noteBot.config import config
+from noteBot.utils import extract_keywords
 
 logger = logging.getLogger(__name__)
 

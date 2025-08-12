@@ -1,13 +1,13 @@
 """
-Unit tests for the main bot functionality.
+Unit tests for the main noteBot functionality.
 """
 
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
-from telegram import Update, User, Message, Chat
+from telegram import Update, User, Message
 from telegram.ext import ContextTypes
 
-from bot import TelegramNotesBot
+from noteBot.botClass import TelegramNotesBot
 
 
 class TestTelegramNotesBot:
@@ -16,7 +16,7 @@ class TestTelegramNotesBot:
     @pytest.fixture
     def bot(self):
         """Create a TelegramNotesBot instance for testing."""
-        with patch('bot.config') as mock_config:
+        with patch('noteBot.config') as mock_config:
             mock_config.is_user_allowed.return_value = True
             mock_config.is_admin_user.return_value = False
             mock_config.MAX_MESSAGE_LENGTH = 4000
@@ -50,7 +50,7 @@ class TestTelegramNotesBot:
     @pytest.mark.asyncio
     async def test_start_command_authorized_user(self, bot, mock_update, mock_context):
         """Test /start command for authorized user."""
-        with patch('bot.config.is_user_allowed', return_value=True):
+        with patch('noteBot.config.is_user_allowed', return_value=True):
             await bot.start_command(mock_update, mock_context)
             
             mock_update.message.reply_text.assert_called_once()
@@ -60,7 +60,7 @@ class TestTelegramNotesBot:
     @pytest.mark.asyncio
     async def test_start_command_unauthorized_user(self, bot, mock_update, mock_context):
         """Test /start command for unauthorized user."""
-        with patch('bot.config.is_user_allowed', return_value=False):
+        with patch('noteBot.config.is_user_allowed', return_value=False):
             await bot.start_command(mock_update, mock_context)
             
             mock_update.message.reply_text.assert_called_once()
@@ -209,7 +209,7 @@ class TestTelegramNotesBot:
         """Test handling of messages that are too long."""
         mock_update.message.text = "x" * 5000  # Exceeds MAX_MESSAGE_LENGTH
         
-        with patch('bot.config.MAX_MESSAGE_LENGTH', 4000):
+        with patch('noteBot.config.MAX_MESSAGE_LENGTH', 4000):
             await bot.handle_note_message(mock_update, mock_context)
             
             mock_update.message.reply_text.assert_called_once()
@@ -219,7 +219,7 @@ class TestTelegramNotesBot:
     @pytest.mark.asyncio
     async def test_handle_note_message_unauthorized(self, bot, mock_update, mock_context):
         """Test handling of messages from unauthorized users."""
-        with patch('bot.config.is_user_allowed', return_value=False):
+        with patch('noteBot.config.is_user_allowed', return_value=False):
             await bot.handle_note_message(mock_update, mock_context)
             
             mock_update.message.reply_text.assert_called_once()

@@ -3,11 +3,10 @@ Unit tests for Ollama client functionality.
 """
 
 import pytest
-import json
 from unittest.mock import patch, MagicMock
 import requests
 
-from ollama_client import OllamaClient, OllamaClassificationResult
+from noteBot.ollama_client import OllamaClient, OllamaClassificationResult
 
 
 class TestOllamaClient:

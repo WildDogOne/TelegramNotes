@@ -2,13 +2,11 @@
 Unit tests for utility functions.
 """
 
-import pytest
 from datetime import datetime
 from pathlib import Path
 import tempfile
-import os
 
-from utils import (
+from noteBot.utils import (
     sanitize_filename,
     sanitize_class_name,
     generate_unique_filename,
