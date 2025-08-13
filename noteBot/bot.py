@@ -5,6 +5,7 @@ Main bot application with handlers for user interactions.
 
 import logging
 import sys
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict
@@ -407,12 +408,19 @@ class TelegramNotesBot:
 
         # Format results
         results_lines = []
+        header_pattern = re.compile(r'---.*?---\s*', re.DOTALL)
+
         for i, result in enumerate(results[:10], 1):  # Limit to 10 results
             modified_time = result['modified_time'].strftime("%Y-%m-%d")
-            filename = result['filename'].replace('.md', '')
+            filename = result['filename']
+            content = self.file_manager.read_note(result["file_path"])
+
+            # Remove the header from the content using regex
+            file_content = re.sub(header_pattern, '', content).strip()
+
             results_lines.append(
-                f"{i}. `{result['class_name']}` - {filename} ({modified_time})"
-            )
+                    f"{i}. `{result['class_name']}` - {filename} ({modified_time})\n{file_content}"
+                )
 
         results_text = "\n".join(results_lines)
         total_results = len(results)

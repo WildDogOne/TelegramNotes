@@ -94,7 +94,21 @@ class FileManager:
             error_msg = f"Failed to save note: {e}"
             logger.error(error_msg)
             return False, "", error_msg
-            
+
+    def read_note(self, filename):
+        """Read the content of a file and return it as a string."""
+        try:
+            with open(filename, 'r', encoding='utf-8') as file:
+                return file.read()
+        except FileNotFoundError:
+            print(f"File not found: {filename}")
+            return ""
+        except Exception as e:
+            print(f"An error occurred while reading the file: {e}")
+            return ""
+
+
+
     def get_existing_classes(self) -> List[str]:
         """
         Get list of existing note classes (directory names).
@@ -293,3 +307,4 @@ class FileManager:
         # Sort by creation time and limit results
         notes.sort(key=lambda x: x['created_time'], reverse=True)
         return notes[:limit]
+
